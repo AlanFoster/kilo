@@ -5,13 +5,21 @@
 #include <termios.h>
 #include <unistd.h>
 
-void die(const char *s) {
-  perror(s);
-  exit(1);
+#define isFailure(result) (result == -1)
+#define hasInput(result) (result == 1)
+#define CTRL_KEY(key) ((key) & 0x1f)
+
+void clearScreen() {
+  // Clear Screen
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  // Place cursor top left
+  write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
-int isFailure(int result) {
-  return result == -1;
+void die(const char *s) {
+  clearScreen();
+  perror(s);
+  exit(1);
 }
 
 struct termios original_termios;
@@ -48,25 +56,51 @@ void enableRawMode() {
   }
 }
 
+void drawRows() {
+  int y;
+  for (y = 0; y < 80; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
+
+void refreshScreen() {
+  clearScreen();
+  drawRows();
+  write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+char readKey() {
+  int readStatusCode;
+  char c;
+  do {
+    readStatusCode = read(STDIN_FILENO, &c, 1);
+    if (isFailure(readStatusCode) && errno != EAGAIN) {
+      die("readKey failure");
+    }
+  } while (!hasInput(readStatusCode));
+  
+  return c;
+}
+
+void handleKeypress(char key) {
+  switch (key) {
+    case CTRL_KEY('q'):
+     clearScreen(); 
+     exit(0);
+     break;
+  }
+}
+
 int main() {
   saveCurrentTerminalMode();
   enableRawMode();
   atexit(restoreTerminalMode);
 
   while (1) {
-    char c = '\0';
-    if (isFailure(read(STDIN_FILENO, &c, 1)) && errno != EAGAIN) {
-      die("reading");
-    }
-
-    if (isprint(c)) {
-      printf("%d ('%c')\r\n", c, c);
-    } else { 
-      printf("%d\r\n", c);
-    }
- 
-    if (c == 'q') break;   
+    refreshScreen();
+    handleKeypress(readKey());
   }
 
   return 0;
 }
+
