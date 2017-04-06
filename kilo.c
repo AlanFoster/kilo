@@ -1,16 +1,30 @@
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
 
+void die(const char *s) {
+  perror(s);
+  exit(1);
+}
+
+int isFailure(int result) {
+  return result == -1;
+}
+
 struct termios original_termios;
 void saveCurrentTerminalMode() {
-  tcgetattr(STDIN_FILENO, &original_termios);
+  if (isFailure(tcgetattr(STDIN_FILENO, &original_termios))) {
+    die("saveCurrentTerminalMode failure");
+  }
 }
 
 void restoreTerminalMode() {
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
+  if (isFailure(tcgetattr(STDIN_FILENO, &original_termios))) {
+    die("restoreTerminalMode failure");
+  }
 }
 
 /*
@@ -29,7 +43,9 @@ void enableRawMode() {
   raw.c_cc[VMIN] = 0;
   raw.c_cc[VTIME] = 1;
 
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+  if (isFailure(tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw))) {
+    die("enableRawMode failure");
+  }
 }
 
 int main() {
@@ -39,7 +55,10 @@ int main() {
 
   while (1) {
     char c = '\0';
-    read(STDIN_FILENO, &c, 1);
+    if (isFailure(read(STDIN_FILENO, &c, 1)) && errno != EAGAIN) {
+      die("reading");
+    }
+
     if (isprint(c)) {
       printf("%d ('%c')\r\n", c, c);
     } else { 
