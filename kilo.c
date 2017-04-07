@@ -7,6 +7,7 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define KILO_VERSION "0.0.1"
 #define isFailure(result) (result == -1)
 #define hasInput(result) (result == 1)
 #define CTRL_KEY(key) ((key) & 0x1f)
@@ -46,13 +47,6 @@ void clearScreen() {
   write(STDOUT_FILENO, "\x1b[2J", 4);
   // Place cursor top left
   write(STDOUT_FILENO, "\x1b[H", 3);
-}
-
-void clearScreenWithBuffer(struct outputBuffer *output_buffer) {
-  // Clear Screen
-  appendBuffer(output_buffer, "\x1b[2J", 4);
-  // Place cursor top left
-  appendBuffer(output_buffer, "\x1b[H", 3);
 }
 
 void die(const char *s) {
@@ -106,13 +100,47 @@ int getWindowSize(int *rows, int *cols) {
   return 0;
 }
 
+void appendCenteredText(struct outputBuffer *output_buffer, char *s, int length) {
+  int leftPadding = (editor_config.screen_cols - length) / 2;
+  while (leftPadding--) {
+    appendBuffer(output_buffer, " ", 1);
+  }
+  appendBuffer(output_buffer, s, length);
+}
+
+void appendWelcomeMessage(struct outputBuffer *output_buffer) {
+  char welcome[80];
+  int welcome_length = snprintf(welcome, sizeof(welcome), "Custom Editor -- version %s", KILO_VERSION);
+  if (welcome_length > editor_config.screen_cols) {
+    welcome_length = editor_config.screen_cols;
+  }
+
+  appendCenteredText(output_buffer, welcome, welcome_length);
+}
+
+void appendQuitInstructions(struct outputBuffer *output_buffer) {
+  appendCenteredText(output_buffer, "Press ctrl+q to quit!", 21);
+}
+
 void drawRows(struct outputBuffer *output_buffer) {
   int y;
   for (y = 0; y < editor_config.screen_rows; y++) {
     appendBuffer(output_buffer, "\x1b[31m", 5);
 
+    appendBuffer(output_buffer, "~", 1);
+
+    if (y == editor_config.screen_rows / 2) {
+      appendWelcomeMessage(output_buffer);
+    }
+
+    if (y == (editor_config.screen_rows / 2) + 1) {
+      appendQuitInstructions(output_buffer);
+    }
+
+    appendBuffer(output_buffer, "\x1b[K", 3);
+
     if (y < editor_config.screen_rows - 1) {
-      appendBuffer(output_buffer, "~\r\n", 3);
+      appendBuffer(output_buffer, "\r\n", 2);
     }
   }
 }
@@ -120,9 +148,12 @@ void drawRows(struct outputBuffer *output_buffer) {
 void refreshScreen() {
   struct outputBuffer output_buffer = EMPTY_OUTPUT_BUFFER;
 
-  clearScreenWithBuffer(&output_buffer);
+  appendBuffer(&output_buffer, "\x1b[?25l", 6);
+  appendBuffer(&output_buffer, "\x1b[H", 3);
+
   drawRows(&output_buffer);
   appendBuffer(&output_buffer, "\x1b[H", 3);
+  appendBuffer(&output_buffer, "\x1b[?25h", 6);
 
   write(STDOUT_FILENO, output_buffer.start, output_buffer.length);
 
