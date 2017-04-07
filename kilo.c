@@ -2,12 +2,22 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 #define isFailure(result) (result == -1)
 #define hasInput(result) (result == 1)
 #define CTRL_KEY(key) ((key) & 0x1f)
+
+struct editorConfig {
+  int screen_rows;
+  int screen_cols;
+
+  struct termios initial_termios;
+};
+
+struct editorConfig editor_config;
 
 void clearScreen() {
   // Clear Screen
@@ -22,15 +32,14 @@ void die(const char *s) {
   exit(1);
 }
 
-struct termios original_termios;
 void saveCurrentTerminalMode() {
-  if (isFailure(tcgetattr(STDIN_FILENO, &original_termios))) {
+  if (isFailure(tcgetattr(STDIN_FILENO, &editor_config.initial_termios))) {
     die("saveCurrentTerminalMode failure");
   }
 }
 
 void restoreTerminalMode() {
-  if (isFailure(tcgetattr(STDIN_FILENO, &original_termios))) {
+  if (isFailure(tcgetattr(STDIN_FILENO, &editor_config.initial_termios))) {
     die("restoreTerminalMode failure");
   }
 }
@@ -56,10 +65,26 @@ void enableRawMode() {
   }
 }
 
+int getWindowSize(int *rows, int *cols) {
+  struct winsize ws;
+  
+  if (isFailure(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) || ws.ws_col == 0)) {
+    return -1;
+  }
+
+  *cols = ws.ws_col;
+  *rows = ws.ws_row;
+  return 0;
+}
+
 void drawRows() {
   int y;
-  for (y = 0; y < 80; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+  for (y = 0; y < editor_config.screen_rows; y++) {
+    write(STDOUT_FILENO, "\x1b[31m", 5);
+    
+    if (y < editor_config.screen_rows - 1) {
+      write(STDOUT_FILENO, "~\r\n", 3);
+    }
   }
 }
 
@@ -91,7 +116,15 @@ void handleKeypress(char key) {
   }
 }
 
+void initEditor() {
+  if (isFailure(getWindowSize(&editor_config.screen_rows, &editor_config.screen_cols))) {
+    die("initEditor");
+  }
+}
+
 int main() {
+  initEditor();
+
   saveCurrentTerminalMode();
   enableRawMode();
   atexit(restoreTerminalMode);
