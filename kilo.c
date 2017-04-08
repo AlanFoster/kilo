@@ -13,6 +13,9 @@
 #define CTRL_KEY(key) ((key) & 0x1f)
 
 struct editorConfig {
+  int cursor_x;
+  int cursor_y;
+
   int screen_rows;
   int screen_cols;
 
@@ -20,7 +23,6 @@ struct editorConfig {
 };
 
 struct editorConfig editor_config;
-
 
 struct outputBuffer {
   char *start;
@@ -152,7 +154,11 @@ void refreshScreen() {
   appendBuffer(&output_buffer, "\x1b[H", 3);
 
   drawRows(&output_buffer);
-  appendBuffer(&output_buffer, "\x1b[H", 3);
+
+  char cursorPositionBuffer[32];
+  snprintf(cursorPositionBuffer, sizeof(cursorPositionBuffer), "\x1b[%d;%dH", editor_config.cursor_y + 1, editor_config.cursor_x + 1);
+  appendBuffer(&output_buffer, cursorPositionBuffer, strlen(cursorPositionBuffer));
+
   appendBuffer(&output_buffer, "\x1b[?25h", 6);
 
   write(STDOUT_FILENO, output_buffer.start, output_buffer.length);
@@ -173,8 +179,40 @@ char readKey() {
   return c;
 }
 
+void moveCursor(char key) {
+  switch(key) {
+    case 'w':
+      if (editor_config.cursor_y != 0) {
+        editor_config.cursor_y--;
+      }
+      break;
+    case 'a':
+      if (editor_config.cursor_x != 0) {
+        editor_config.cursor_x--;
+      }
+      break;
+    case 's':
+      if (editor_config.cursor_y < editor_config.screen_rows) {
+        editor_config.cursor_y++;
+      }
+      break;
+    case 'd':
+      if (editor_config.cursor_x < editor_config.screen_cols) {
+        editor_config.cursor_x++;
+      }
+      break;
+  }
+}
+
 void handleKeypress(char key) {
   switch (key) {
+    case 'w':
+    case 'a':
+    case 's':
+    case 'd':
+      moveCursor(key);
+      break;
+
     case CTRL_KEY('q'):
      clearScreen();
      exit(0);
@@ -183,6 +221,9 @@ void handleKeypress(char key) {
 }
 
 void initEditor() {
+  editor_config.cursor_x = 0;
+  editor_config.cursor_y = 0;
+
   if (isFailure(getWindowSize(&editor_config.screen_rows, &editor_config.screen_cols))) {
     die("initEditor");
   }
